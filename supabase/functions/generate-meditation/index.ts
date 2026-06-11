@@ -55,11 +55,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // SEC-03 — Rate Limiting
   const { data: counter, error: fetchError } = await supabase
     .from('usage_counters')
-    .select('id, request_count, window_start')
+    .select('request_count, window_start')
     .eq('user_id', userId)
     .maybeSingle();
 
   if (fetchError) {
+    console.error('usage_counters fetch error:', JSON.stringify(fetchError));
     return new Response('Service unavailable', { status: 503, headers: corsHeaders });
   }
 
@@ -72,6 +73,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       .insert({ user_id: userId, request_count: 1, window_start: now.toISOString() });
 
     if (insertError) {
+      console.error('usage_counters insert error:', JSON.stringify(insertError));
       return new Response('Service unavailable', { status: 503, headers: corsHeaders });
     }
   } else {
@@ -82,9 +84,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
       const { error: resetError } = await supabase
         .from('usage_counters')
         .update({ request_count: 1, window_start: now.toISOString() })
-        .eq('id', counter.id);
+        .eq('user_id', userId);
 
       if (resetError) {
+        console.error('usage_counters reset error:', JSON.stringify(resetError));
         return new Response('Service unavailable', { status: 503, headers: corsHeaders });
       }
     } else {
@@ -98,9 +101,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
       const { error: incrementError } = await supabase
         .from('usage_counters')
         .update({ request_count: counter.request_count + 1 })
-        .eq('id', counter.id);
+        .eq('user_id', userId);
 
       if (incrementError) {
+        console.error('usage_counters increment error:', JSON.stringify(incrementError));
         return new Response('Service unavailable', { status: 503, headers: corsHeaders });
       }
     }
@@ -173,7 +177,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   const audioBuffer = await ttsRes.arrayBuffer();
-  const audioBase64 = btoa(String.fromCharCode(...new Uint8Array(audioBuffer)));
+  let binary = '';
+  const bytes = new Uint8Array(audioBuffer);
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  const audioBase64 = btoa(binary);
 
   return new Response(
     JSON.stringify({ script, audioBase64 }),

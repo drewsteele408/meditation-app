@@ -38,8 +38,10 @@ class GeminiRepository {
   }) async {
     final token = _supabase.auth.currentSession?.accessToken;
     if (token == null) {
+      // Session is missing — map to the standard session-expired message so
+      // the router redirect and the error banner both display the same string.
       throw const MeditationGenerationException(
-        message: 'No active session. Please sign in before generating a meditation.',
+        message: 'Your session has expired. Please log in again.',
       );
     }
 
@@ -51,13 +53,44 @@ class GeminiRepository {
         headers: {'Authorization': 'Bearer $token'},
       );
     } on FunctionException catch (e) {
+      // Map well-known HTTP status codes to plain-language messages so that the
+      // UI never receives a raw Supabase error string.  A null details value
+      // (common when the function is not yet deployed or the host is
+      // unreachable) previously produced the string "null" as the message.
+      final String message;
+      switch (e.status) {
+        case 401:
+          message = 'Your session has expired. Please log in again.';
+        case 429:
+          message = 'You have reached the daily limit. Please try again tomorrow.';
+        case 503:
+        case 502:
+        case 504:
+          message = 'Something went wrong. Please try again.';
+        default:
+          // Use details only when it is a non-empty, non-null string.
+          final details = e.details;
+          message = (details != null &&
+                  details.toString().isNotEmpty &&
+                  details.toString() != 'null')
+              ? details.toString()
+              : 'Something went wrong. Please try again.';
+      }
       throw MeditationGenerationException(
-        message: e.details?.toString() ?? 'Edge Function invocation failed.',
+        message: message,
         statusCode: e.status,
       );
     } catch (e) {
+      // Catch-all for network errors (SocketException, TimeoutException, etc.)
+      final raw = e.toString().toLowerCase();
+      final isNetwork = raw.contains('socket') ||
+          raw.contains('network') ||
+          raw.contains('connection') ||
+          raw.contains('timeout');
       throw MeditationGenerationException(
-        message: 'Unexpected error calling generate-meditation: $e',
+        message: isNetwork
+            ? 'No internet connection. Please check your network and try again.'
+            : 'Something went wrong. Please try again.',
       );
     }
 

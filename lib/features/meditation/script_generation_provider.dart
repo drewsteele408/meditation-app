@@ -55,6 +55,10 @@ class ScriptGenerationNotifier extends _$ScriptGenerationNotifier {
   /// Sets [state] to [AsyncError] on validation failure or any exception.
   /// Sets [state] to [AsyncData] on success.
   Future<void> generate(String prompt, int durationMinutes) async {
+    // Set loading state first so the spinner appears on the same frame as the
+    // button tap, before any conditional or async operation executes.
+    state = const AsyncLoading();
+
     // Client-side validation — no network call needed for these cases.
     if (prompt.trim().isEmpty) {
       state = AsyncError(
@@ -65,13 +69,11 @@ class ScriptGenerationNotifier extends _$ScriptGenerationNotifier {
     }
     if (prompt.length > 1000) {
       state = AsyncError(
-        Exception('Your prompt is too long. Please keep it under 1000 characters.'),
+        Exception('Your prompt is too long. Please shorten it to 1,000 characters or fewer.'),
         StackTrace.current,
       );
       return;
     }
-
-    state = const AsyncLoading();
 
     try {
       final result = await ref

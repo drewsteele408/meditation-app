@@ -18,6 +18,35 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
   bool _isSignUp = false;
 
+  /// Maps any thrown auth error to a plain-language sentence suitable for
+  /// display in a SnackBar.  Never exposes a raw exception string to the user.
+  String _authErrorMessage(Object? error) {
+    if (error == null) return 'Something went wrong. Please try again.';
+    final raw = error.toString().toLowerCase();
+    if (raw.contains('invalid login credentials') ||
+        raw.contains('invalid_credentials') ||
+        raw.contains('400')) {
+      return 'Incorrect email or password. Please try again.';
+    }
+    if (raw.contains('email not confirmed') ||
+        raw.contains('email_not_confirmed')) {
+      return 'Please confirm your email address before logging in.';
+    }
+    if (raw.contains('user already registered') ||
+        raw.contains('already_exists')) {
+      return 'An account with this email already exists. Please log in instead.';
+    }
+    if (raw.contains('network') ||
+        raw.contains('socketexception') ||
+        raw.contains('connection')) {
+      return 'No internet connection. Please check your network and try again.';
+    }
+    if (raw.contains('rate') || raw.contains('429')) {
+      return 'Too many attempts. Please wait a moment and try again.';
+    }
+    return 'Something went wrong. Please try again.';
+  }
+
   @override
   void dispose() {
     _emailController.dispose();
@@ -47,12 +76,20 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
     // Use ref.listen to react to auth state changes — never navigate manually.
     // On error: show a SnackBar with a human-readable message.
+    //
+    // The mounted check prevents ScaffoldMessenger.of(context) from being
+    // called after the widget is disposed — on Flutter web this causes a null
+    // DOM node crash identical to the removeChild error.  The error is mapped
+    // to a plain-language string rather than calling error.toString() directly,
+    // which would expose raw Supabase AuthException internals to the user.
     ref.listen<AsyncValue<void>>(authNotifierProvider, (previous, next) {
+      if (!mounted) return;
       next.whenOrNull(
         error: (error, _) {
+          final message = _authErrorMessage(error);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(error.toString()),
+              content: Text(message),
               backgroundColor: colorScheme.error,
             ),
           );

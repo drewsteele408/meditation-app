@@ -59,9 +59,15 @@ class _PromptScreenState extends ConsumerState<PromptScreen> {
 
     // Navigate to /playback when generation succeeds — never navigate manually
     // inside the button callback.
+    //
+    // The mounted check is mandatory on Flutter web: the listener callback can
+    // fire during a frame where the widget is already disposed, which causes a
+    // "Cannot read properties of null (reading 'removeChild')" JS crash because
+    // GoRouter tries to operate on a detached navigator overlay node.
     ref.listen<AsyncValue<ScriptGenerationResult?>>(
       scriptGenerationNotifierProvider,
       (previous, next) {
+        if (!mounted) return;
         next.whenOrNull(
           data: (result) {
             if (result != null) {
