@@ -24,7 +24,7 @@ final geminiRepositoryProvider = AutoDisposeProvider<GeminiRepository>.internal(
 // ignore: unused_element
 typedef GeminiRepositoryRef = AutoDisposeProviderRef<GeminiRepository>;
 String _$scriptGenerationNotifierHash() =>
-    r'2d178cc994dcc93006380ee1b14d1049de43ba7f';
+    r'655e371631b53fdf4544aa20ad8e3dfeb444f355';
 
 /// See also [ScriptGenerationNotifier].
 @ProviderFor(ScriptGenerationNotifier)

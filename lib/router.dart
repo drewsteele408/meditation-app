@@ -6,6 +6,7 @@ import 'features/auth/auth_provider.dart';
 import 'features/auth/screens/auth_screen.dart';
 import 'features/auth/screens/splash_screen.dart';
 import 'features/home/screens/home_screen.dart';
+import 'features/meditation/screens/playback_screen.dart';
 import 'features/meditation/screens/prompt_screen.dart';
 import 'features/settings/screens/settings_screen.dart';
 
@@ -109,9 +110,7 @@ GoRouter goRouter(Ref ref) {
           if (state.extra == null) return _prompt;
           return null;
         },
-        builder: (context, state) => const Scaffold(
-          body: Center(child: Text('Playback')),
-        ),
+        builder: (context, state) => const PlaybackScreen(),
       ),
       GoRoute(
         path: _settings,

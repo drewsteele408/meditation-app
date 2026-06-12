@@ -36,10 +36,25 @@ class GeminiRepository {
     required String prompt,
     int durationMinutes = 10,
   }) async {
+    // Proactively refresh the session before reading the access token.
+    // currentSession is a synchronous cached value that may hold an expired JWT
+    // even while the auto-refresh is still in-flight or has failed.  Calling
+    // refreshSession() ensures the token is valid before we attach it to the
+    // Edge Function request.  If the session cannot be refreshed (truly expired
+    // or network failure at this point) we surface the same session-expired
+    // message as before so the router redirect and the error banner stay in sync.
+    try {
+      await _supabase.auth.refreshSession();
+    } catch (_) {
+      throw const MeditationGenerationException(
+        message: 'Your session has expired. Please log in again.',
+      );
+    }
+
     final token = _supabase.auth.currentSession?.accessToken;
     if (token == null) {
-      // Session is missing — map to the standard session-expired message so
-      // the router redirect and the error banner both display the same string.
+      // This branch is an extra safety net in case refreshSession() succeeds
+      // but the session is still absent (e.g. signed out on another device).
       throw const MeditationGenerationException(
         message: 'Your session has expired. Please log in again.',
       );
@@ -68,12 +83,17 @@ class GeminiRepository {
         case 504:
           message = 'Something went wrong. Please try again.';
         default:
-          // Use details only when it is a non-empty, non-null string.
           final details = e.details;
-          message = (details != null &&
-                  details.toString().isNotEmpty &&
-                  details.toString() != 'null')
-              ? details.toString()
+          String? extracted;
+          if (details is Map) {
+            extracted = details['error']?.toString();
+          } else if (details is String &&
+              details.isNotEmpty &&
+              details != 'null') {
+            extracted = details;
+          }
+          message = (extracted != null && extracted.isNotEmpty)
+              ? extracted
               : 'Something went wrong. Please try again.';
       }
       throw MeditationGenerationException(

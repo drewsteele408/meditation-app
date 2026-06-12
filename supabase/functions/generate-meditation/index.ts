@@ -6,6 +6,13 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+function errorResponse(message: string, status: number): Response {
+  return new Response(JSON.stringify({ error: message }), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -14,7 +21,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // SEC-01 — JWT Verification
   const authHeader = req.headers.get('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return new Response('Unauthorized', { status: 401, headers: corsHeaders });
+    return errorResponse('Unauthorized', 401);
   }
   const token = authHeader.slice(7);
 
@@ -24,7 +31,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const { data: { user }, error: authError } = await supabase.auth.getUser(token);
   if (authError || !user) {
-    return new Response('Unauthorized', { status: 401, headers: corsHeaders });
+    return errorResponse('Unauthorized', 401);
   }
   const userId = user.id;
 
@@ -39,16 +46,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
       durationMinutes = body.durationMinutes;
     }
   } catch {
-    return new Response(
+    return errorResponse(
       'prompt is required and must be a non-empty string under 1000 characters',
-      { status: 400, headers: corsHeaders },
+      400,
     );
   }
 
   if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0 || prompt.length > 1000) {
-    return new Response(
+    return errorResponse(
       'prompt is required and must be a non-empty string under 1000 characters',
-      { status: 400, headers: corsHeaders },
+      400,
     );
   }
 
@@ -61,7 +68,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   if (fetchError) {
     console.error('usage_counters fetch error:', JSON.stringify(fetchError));
-    return new Response('Service unavailable', { status: 503, headers: corsHeaders });
+    return errorResponse('Service unavailable', 503);
   }
 
   const now = new Date();
@@ -74,7 +81,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     if (insertError) {
       console.error('usage_counters insert error:', JSON.stringify(insertError));
-      return new Response('Service unavailable', { status: 503, headers: corsHeaders });
+      return errorResponse('Service unavailable', 503);
     }
   } else {
     const windowStart = new Date(counter.window_start);
@@ -88,14 +95,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
       if (resetError) {
         console.error('usage_counters reset error:', JSON.stringify(resetError));
-        return new Response('Service unavailable', { status: 503, headers: corsHeaders });
+        return errorResponse('Service unavailable', 503);
       }
     } else {
       if (counter.request_count >= 20) {
-        return new Response('Rate limit exceeded. Try again later.', {
-          status: 429,
-          headers: corsHeaders,
-        });
+        return errorResponse('Rate limit exceeded. Try again later.', 429);
       }
 
       const { error: incrementError } = await supabase
@@ -105,15 +109,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
       if (incrementError) {
         console.error('usage_counters increment error:', JSON.stringify(incrementError));
-        return new Response('Service unavailable', { status: 503, headers: corsHeaders });
+        return errorResponse('Service unavailable', 503);
       }
     }
   }
 
-  // SEC-04 — Gemini 1.5 Flash
+  // SEC-04 — Gemini 2.5 Flash
   const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
   const geminiUrl =
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`;
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
 
   const systemInstruction = `You are a calm and experienced meditation guide. Write a guided meditation script in plain prose — no headings, no bullet points, no markdown. The script should be soothing, present-tense, and spoken directly to the listener. Duration: approximately ${durationMinutes} minutes.`;
 
@@ -136,20 +140,19 @@ Deno.serve(async (req: Request): Promise<Response> => {
   });
 
   if (!geminiRes.ok) {
-    return new Response('Meditation script generation failed. Please try again later.', {
-      status: geminiRes.status >= 500 ? 502 : geminiRes.status,
-      headers: corsHeaders,
-    });
+    const geminiError = await geminiRes.text();
+    console.error('Gemini API error:', geminiRes.status, geminiError);
+    return errorResponse(
+      'Meditation script generation failed. Please try again later.',
+      geminiRes.status >= 500 ? 502 : geminiRes.status,
+    );
   }
 
   const geminiData = await geminiRes.json();
   const script: string = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
 
   if (!script) {
-    return new Response('Meditation script generation failed. Please try again later.', {
-      status: 502,
-      headers: corsHeaders,
-    });
+    return errorResponse('Meditation script generation failed. Please try again later.', 502);
   }
 
   // SEC-05 — ElevenLabs TTS
@@ -170,10 +173,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
   });
 
   if (!ttsRes.ok) {
-    return new Response('Audio generation failed. Please try again later.', {
-      status: ttsRes.status >= 500 ? 502 : ttsRes.status,
-      headers: corsHeaders,
-    });
+    return errorResponse(
+      'Audio generation failed. Please try again later.',
+      ttsRes.status >= 500 ? 502 : ttsRes.status,
+    );
   }
 
   const audioBuffer = await ttsRes.arrayBuffer();
